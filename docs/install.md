@@ -33,6 +33,7 @@ scripts/install.sh --non-interactive \
 | `--virtual-host NAME` | `SBCHAT_VIRTUAL_HOST` | host name in the self-signed certificate of port 3443 (default: the homeserver's host) |
 | `--web-origins LIST` | `SBCHAT_WEB_ALLOWED_ORIGINS` | websites allowed to embed the web chat, comma-separated |
 | `--web-call-center ID` | `SBCHAT_WEB_CALL_CENTER_ID` | call center that receives web chats |
+| `--web-public-url URL` | `SBCHAT_WEB_PUBLIC_URL` | the https address visitors' browsers use for the web chat (behind the reverse proxy): SwitchBoard puts it in the string of *Link a website* |
 | `--trusted-proxies LIST` | `SBCHAT_TRUSTED_PROXIES` | addresses/CIDRs of the reverse proxy ([reverse-proxy.md](reverse-proxy.md)) |
 | `--http-bind ADDR:PORT` | `SBCHAT_HTTP_BIND` | plain HTTP listener for the reverse proxy (default `0.0.0.0:8088` inside the container, not published) |
 | `--mas-admin-client-id ID` | `SBCHAT_MAS_ADMIN_CLIENT_ID` | optional MAS admin client ([homeserver.md](homeserver.md)) |

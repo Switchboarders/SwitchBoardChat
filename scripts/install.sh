@@ -27,6 +27,7 @@ BOT_PASSWORD_FILE=""
 VIRTUAL_HOST_NAME="${SBCHAT_VIRTUAL_HOST:-}"
 WEB_ORIGINS="${SBCHAT_WEB_ALLOWED_ORIGINS:-}"
 WEB_CALL_CENTER="${SBCHAT_WEB_CALL_CENTER_ID:-}"
+WEB_PUBLIC="${SBCHAT_WEB_PUBLIC_URL:-}"
 TRUSTED="${SBCHAT_TRUSTED_PROXIES:-}"
 HTTP_BIND_ADDR="${SBCHAT_HTTP_BIND:-}"
 MAS_CLIENT_ID="${SBCHAT_MAS_ADMIN_CLIENT_ID:-}"
@@ -51,6 +52,7 @@ Options (each also readable from the SBCHAT_* environment variable in brackets):
   --virtual-host NAME           host name for the self-signed certificate (default: the homeserver's host)
   --web-origins LIST            web chat: allowed website origins, comma-separated  [SBCHAT_WEB_ALLOWED_ORIGINS]
   --web-call-center ID          web chat: call center id of the widget              [SBCHAT_WEB_CALL_CENTER_ID]
+  --web-public-url URL          web chat: https address browsers use (behind the proxy) [SBCHAT_WEB_PUBLIC_URL]
   --trusted-proxies LIST        reverse proxy addresses/CIDRs for X-Forwarded-For   [SBCHAT_TRUSTED_PROXIES]
   --http-bind ADDR:PORT         plain HTTP listener for the reverse proxy           [SBCHAT_HTTP_BIND]
   --mas-admin-client-id ID      MAS admin client (optional)                         [SBCHAT_MAS_ADMIN_CLIENT_ID]
@@ -77,6 +79,7 @@ while [ $# -gt 0 ]; do
         --virtual-host) VIRTUAL_HOST_NAME=${2-}; shift 2 ;;
         --web-origins) WEB_ORIGINS=${2-}; shift 2 ;;
         --web-call-center) WEB_CALL_CENTER=${2-}; shift 2 ;;
+        --web-public-url) WEB_PUBLIC=${2-}; shift 2 ;;
         --trusted-proxies) TRUSTED=${2-}; shift 2 ;;
         --http-bind) HTTP_BIND_ADDR=${2-}; shift 2 ;;
         --mas-admin-client-id) MAS_CLIENT_ID=${2-}; shift 2 ;;
@@ -241,6 +244,7 @@ need curl
 [ -n "$VIRTUAL_HOST_NAME" ] || VIRTUAL_HOST_NAME=$(printf '%s' "$HOMESERVER_URL" | sed -E 's#^https?://##; s#[:/].*$##')
 [[ "$VIRTUAL_HOST_NAME" =~ ^[A-Za-z0-9.-]+$ ]] || die $EXIT_ARGS "--virtual-host must be a host name"
 [ -z "$WEB_CALL_CENTER" ] || [[ "$WEB_CALL_CENTER" =~ ^[0-9]+$ ]] || die $EXIT_ARGS "--web-call-center must be a number"
+[ -z "$WEB_PUBLIC" ] || [[ "$WEB_PUBLIC" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$ ]] || die $EXIT_ARGS "--web-public-url must look like https://chat.example.org"
 for pair in "bot password:$BOT_PASSWORD" "web origins:$WEB_ORIGINS" "trusted proxies:$TRUSTED" "HTTP bind:$HTTP_BIND_ADDR" \
             "MAS client id:$MAS_CLIENT_ID" "MAS client secret:$MAS_CLIENT_SECRET"; do
     safe_value "${pair%%:*}" "${pair#*:}"
@@ -261,6 +265,7 @@ env_set VIRTUAL_HOST "$VIRTUAL_HOST_NAME"
 env_set SBCHAT_DOCKER_NETWORK "$NETWORK"
 [ -z "$WEB_ORIGINS" ] || env_set WEB_ALLOWED_ORIGINS "$WEB_ORIGINS"
 [ -z "$WEB_CALL_CENTER" ] || env_set WEB_CALL_CENTER_ID "$WEB_CALL_CENTER"
+[ -z "$WEB_PUBLIC" ] || env_set WEB_PUBLIC_URL "${WEB_PUBLIC%/}"
 [ -z "$TRUSTED" ] || env_set TRUSTED_PROXIES "$TRUSTED"
 [ -z "$HTTP_BIND_ADDR" ] || env_set HTTP_BIND "$HTTP_BIND_ADDR"
 [ -z "$MAS_CLIENT_ID" ] || env_set MAS_ADMIN_CLIENT_ID "$MAS_CLIENT_ID"

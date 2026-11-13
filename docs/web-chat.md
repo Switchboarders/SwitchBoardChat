@@ -118,6 +118,28 @@ for a month are deactivated automatically, as for SMS.)
 5. Install and configure the plugin on the website (see the wp-chat documentation) and run a
    real chat end to end.
 
+### Linking a website from SwitchBoard (no server settings)
+
+A committee can link its own website without anyone editing `.env` or restarting the bridge:
+
+1. In SwitchBoard, the committee's *SwitchBoard Chat* page, *Link a website*: SwitchBoard asks the bridge for a
+   one-time code (`create_web_pairing`, valid 30 minutes) and shows one string,
+   `https://chat.example.org#K7QM-3XRA-PW2D`. The address is `WEB_PUBLIC_URL` when it is set (the https address
+   visitors' browsers use, behind the reverse proxy), otherwise SwitchBoard's own address of the bridge.
+2. In WordPress, *Settings > WP Chat > Link this website to a committee*: paste the string, *Link*. The plugin's
+   server sends `POST /web/pair {"code": "...", "origin": "https://www.example.org"}`; the bridge records the
+   website for that committee (codes are hashed, used once, 10 attempts per address and hour).
+3. From then on that website is allowed (CORS) like the ones in `WEB_ALLOWED_ORIGINS`, and **every new chat it
+   opens goes to its own committee**: many committees can share one bridge, each with its own website(s).
+   `WEB_CALL_CENTER_ID` is only for the websites listed in `.env`.
+
+SwitchBoard lists the linked websites and removes them (`list_web_sites`, `remove_web_site`); a removed website
+is refused at once. Deleting a call center unlinks its websites.
+
+A committee that only uses the web chat needs no voip.ms account: SwitchBoard requests its call center without
+voip.ms (`add_new_call_center` with `committee_ref` instead of the voip.ms fields), and the bridge never calls
+voip.ms for it.
+
 ## 5. Respondent experience and commands
 
 A new room appears in the respondents' Matrix client, named `Web …`. The first message starts

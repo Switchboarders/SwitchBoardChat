@@ -159,13 +159,18 @@ fn is_abandoned(disconnected_since: Option<Instant>, receivers: usize, now: Inst
     receivers == 0 && disconnected_since.is_some_and(|t| now.saturating_duration_since(t) > grace)
 }
 
+/// An origin may open web chats: listed in WEB_ALLOWED_ORIGINS, or a website linked with a pairing code
+fn origin_is_allowed(origin: &str) -> bool {
+    let origin = origin.trim_end_matches('/');
+    allowed_origins().iter().any(|o| o == origin) || crate::web_sites::call_center_for(origin).is_some()
+}
+
 pub fn cors_layer() -> CorsLayer {
-    let origins: Vec<HeaderValue> = allowed_origins()
-        .iter()
-        .filter_map(|o| HeaderValue::from_str(o).ok())
-        .collect();
     CorsLayer::new()
-        .allow_origin(AllowOrigin::list(origins))
+        // checked on every request: a newly linked website works at once, without a restart
+        .allow_origin(AllowOrigin::predicate(|origin: &HeaderValue, _| {
+            origin.to_str().is_ok_and(origin_is_allowed)
+        }))
         .allow_methods([Method::GET, Method::POST])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, HeaderName::from_static("x-wpchat-block"), HeaderName::from_static("last-event-id")])
         .allow_credentials(true)
@@ -176,7 +181,7 @@ fn origin_allowed(headers: &HeaderMap) -> bool {
     let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) else {
         return false;
     };
-    allowed_origins().iter().any(|o| o == origin.trim_end_matches('/'))
+    origin_is_allowed(origin)
 }
 
 fn error_response(status: StatusCode, code: &str) -> Response {
@@ -482,9 +487,12 @@ pub async fn create_session(
         let token = session_token(&headers, None).unwrap_or_default();
         return Json(json!({ "resumed": true, "token": token })).into_response();
     }
-    let Some(call_center_id) = env::var("WEB_CALL_CENTER_ID").ok().and_then(|v| v.parse::<u64>().ok())
+    // A linked website sends its chats to its own call center; otherwise WEB_CALL_CENTER_ID
+    let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()).unwrap_or_default();
+    let Some(call_center_id) = crate::web_sites::call_center_for(origin)
+        .or_else(|| env::var("WEB_CALL_CENTER_ID").ok().and_then(|v| v.parse::<u64>().ok()))
     else {
-        error!("WEB_CALL_CENTER_ID is not set or invalid");
+        error!("Web chat from {origin}: not a linked website and WEB_CALL_CENTER_ID is not set");
         return error_response(StatusCode::SERVICE_UNAVAILABLE, "not_configured");
     };
     let Some((call_center_did, has_respondents)) = call_center_cached(call_center_id) else {

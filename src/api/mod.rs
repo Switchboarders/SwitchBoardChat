@@ -10,6 +10,7 @@ pub mod web_unban;
 pub mod list_macros;
 pub mod send_message;
 pub mod update_macro;
+pub mod web_sites;
 use axum::Json;
 use matrix_sdk::Client;
 use serde::{Deserialize, Serialize};
@@ -200,6 +201,15 @@ pub async fn execute_command(
                 }
                 "send_agreement" => {
                     return agreement::send_agreement(privilege_level, token, client, call_center_id, payload).await;
+                }
+                "create_web_pairing" => {
+                    return web_sites::create_web_pairing(privilege_level, token, payload).await;
+                }
+                "list_web_sites" => {
+                    return web_sites::list_web_sites(privilege_level, token, payload).await;
+                }
+                "remove_web_site" => {
+                    return web_sites::remove_web_site(privilege_level, token, payload).await;
                 }
                 "update_macro" => {
                     return update_macro::update_macro(

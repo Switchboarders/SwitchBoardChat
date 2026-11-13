@@ -28,6 +28,7 @@ mod voip_ms;
 mod web_abuse;
 mod web_chat;
 mod web_server;
+mod web_sites;
 use crate::db_manager::DbManager;
 use crate::fromqueuemanager::FromQueueManager;
 use crate::matrix::Matrix;

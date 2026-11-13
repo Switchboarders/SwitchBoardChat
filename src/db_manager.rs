@@ -375,6 +375,25 @@ impl DbManager {
         Self::add_column_if_missing(&conn, "from_voipms_queue", "from_hash", "integer")?;
         Self::add_column_if_missing(&conn, "to_voipms_queue", "dst_hash", "integer")?;
         Self::add_column_if_missing(&conn, "denied_did", "denied_by", "text")?;
+        // Call centers without voip.ms (web chat only) are identified by SwitchBoard's reference instead
+        Self::add_column_if_missing(&conn, "call_center", "committee_ref", "text")?;
+        // Websites linked to a call center by a pairing code (web chat), and the one-time codes
+        conn.execute(
+            "create table if not exists web_site (
+             origin text primary key,
+             id_call_center integer not null,
+             linked_at integer not null
+         )",
+            (),
+        )?;
+        conn.execute(
+            "create table if not exists web_pairing (
+             code_hash text primary key,
+             id_call_center integer not null,
+             expires_at integer not null
+         )",
+            (),
+        )?;
 
         conn.execute(
             "create table if not exists caller_notified (
@@ -483,10 +502,18 @@ impl DbManager {
     }
     pub fn delete_call_center_by_token(&self, token: String) -> Result<()> {
         let conn = Connection::open(&self.path)?;
+        let hashed = crypto::hash_token(&token);
+        // its websites stop opening web chats, its unused pairing codes go too
         conn.execute(
-            "DELETE FROM call_center WHERE sb_chat_api_token_hashed = ?1",
-            params![crypto::hash_token(&token)],
+            "DELETE FROM web_site WHERE id_call_center IN (SELECT id_call_center FROM call_center WHERE sb_chat_api_token_hashed = ?1)",
+            params![hashed],
         )?;
+        conn.execute(
+            "DELETE FROM web_pairing WHERE id_call_center IN (SELECT id_call_center FROM call_center WHERE sb_chat_api_token_hashed = ?1)",
+            params![hashed],
+        )?;
+        conn.execute("DELETE FROM call_center WHERE sb_chat_api_token_hashed = ?1", params![hashed])?;
+        crate::web_sites::reload();
         Ok(())
     }
     /// Gets API token by call center ID
@@ -733,6 +760,108 @@ impl DbManager {
             }
         }
     }
+    /// Creates (or finds again) a call center without voip.ms: web chat only. SwitchBoard identifies it with
+    /// its own reference (one per committee), so asking twice gives the same call center.
+    pub fn create_or_update_web_only_call_center(
+        &self,
+        committee_ref: &str,
+        privilege_level: u64,
+        regenerate_token: bool,
+    ) -> anyhow::Result<(String, String)> {
+        let conn = Connection::open(&self.path)?;
+        let existing: Option<i64> = conn
+            .query_row(
+                "SELECT id_call_center FROM call_center WHERE committee_ref = ?1",
+                params![committee_ref],
+                |r| r.get(0),
+            )
+            .ok();
+        match existing {
+            Some(id) => {
+                let mut note = String::new();
+                conn.execute(
+                    "UPDATE call_center SET privilege_level = ?1 WHERE id_call_center = ?2",
+                    params![privilege_level, id],
+                )?;
+                if regenerate_token {
+                    let token = crypto::generate_token(128);
+                    conn.execute(
+                        "UPDATE call_center SET sb_chat_api_token = ?1, sb_chat_api_token_hashed = ?2 WHERE id_call_center = ?3",
+                        params![crypto::seal_secret(&token), crypto::hash_token(&token), id],
+                    )?;
+                    note.push_str("sb chat api token updated \n");
+                    return Ok((token, note));
+                }
+                let token = self
+                    .get_call_center_token_by_id(id)?
+                    .ok_or_else(|| anyhow::anyhow!("Failed to retrieve call center token by id"))?;
+                Ok((token, note))
+            }
+            None => {
+                let token = crypto::generate_token(128);
+                conn.execute(
+                    "INSERT INTO call_center (sb_chat_api_token,sb_chat_api_token_hashed,voip_ms_username,voip_ms_api_password,call_center_did,privilege_level,committee_ref) VALUES (?1,?2,'',?3,0,?4,?5)",
+                    params![crypto::seal_secret(&token), crypto::hash_token(&token), crypto::seal_secret(""), privilege_level, committee_ref],
+                )?;
+                Ok((token, "call center created without voip.ms (web chat only)\n".to_string()))
+            }
+        }
+    }
+
+    // ========================================
+    // WEBSITES (web chat pairing)
+    // ========================================
+
+    pub fn add_web_pairing(&self, id_call_center: u64, code_hash: &str, expires_at: i64) -> Result<()> {
+        let conn = Connection::open(&self.path)?;
+        conn.execute("DELETE FROM web_pairing WHERE expires_at < ?1", params![chrono::Utc::now().timestamp()])?;
+        conn.execute(
+            "INSERT OR REPLACE INTO web_pairing (code_hash, id_call_center, expires_at) VALUES (?1, ?2, ?3)",
+            params![code_hash, id_call_center, expires_at],
+        )?;
+        Ok(())
+    }
+
+    /// Uses a pairing code (once, before it expires): the website now sends its web chats to that call
+    /// center. Returns the call center, or None for an unknown, used or expired code.
+    pub fn redeem_web_pairing(&self, code_hash: &str, origin: &str, now: i64) -> Result<Option<u64>> {
+        let mut conn = Connection::open(&self.path)?;
+        let tx = conn.transaction()?;
+        let id: Option<u64> = tx
+            .query_row(
+                "SELECT id_call_center FROM web_pairing WHERE code_hash = ?1 AND expires_at >= ?2",
+                params![code_hash, now],
+                |r| r.get(0),
+            )
+            .ok();
+        tx.execute("DELETE FROM web_pairing WHERE code_hash = ?1", params![code_hash])?;
+        if let Some(id) = id {
+            tx.execute(
+                "INSERT OR REPLACE INTO web_site (origin, id_call_center, linked_at) VALUES (?1, ?2, ?3)",
+                params![origin, id, now],
+            )?;
+        }
+        tx.commit()?;
+        Ok(id)
+    }
+
+    /// Every linked website: (origin, call center)
+    pub fn web_sites(&self) -> Result<Vec<(String, u64, i64)>> {
+        let conn = Connection::open(&self.path)?;
+        let mut stmt = conn.prepare("SELECT origin, id_call_center, linked_at FROM web_site ORDER BY origin")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.collect()
+    }
+
+    pub fn remove_web_site(&self, id_call_center: u64, origin: &str) -> Result<bool> {
+        let conn = Connection::open(&self.path)?;
+        let n = conn.execute(
+            "DELETE FROM web_site WHERE origin = ?1 AND id_call_center = ?2",
+            params![origin, id_call_center],
+        )?;
+        Ok(n > 0)
+    }
+
     // ========================================
     // ROOM MANAGEMENT METHODS
     // ========================================
@@ -1784,6 +1913,51 @@ mod tests {
             .unwrap()
             .map(|c| c.unwrap())
             .collect()
+    }
+
+    fn temp_db(name: &str) -> (DbManager, std::path::PathBuf) {
+        crypto::init_test_env();
+        let dir = std::env::temp_dir().join(format!("sbchat-{name}-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("users.db");
+        let _ = fs::remove_file(&path);
+        let db = DbManager { path: path.clone() };
+        db.create_db_if_not_exist().unwrap();
+        (db, path)
+    }
+
+    /// A pairing code links a website to its call center once, before it expires
+    #[test]
+    fn test_web_pairing_is_used_once_and_expires() {
+        let (db, path) = temp_db("pairing");
+        let now = 1_800_000_000;
+        db.add_web_pairing(7, "h1", now + 60).unwrap();
+        assert_eq!(db.redeem_web_pairing("h1", "https://a.example", now).unwrap(), Some(7));
+        assert_eq!(db.redeem_web_pairing("h1", "https://b.example", now).unwrap(), None, "used once");
+        db.add_web_pairing(7, "h2", now - 1).unwrap();
+        assert_eq!(db.redeem_web_pairing("h2", "https://c.example", now).unwrap(), None, "expired");
+        let sites: Vec<_> = db.web_sites().unwrap().into_iter().map(|(o, id, _)| (o, id)).collect();
+        assert_eq!(sites, vec![("https://a.example".to_string(), 7)]);
+        assert!(db.remove_web_site(7, "https://a.example").unwrap());
+        assert!(!db.remove_web_site(7, "https://a.example").unwrap());
+        let _ = fs::remove_file(&path);
+    }
+
+    /// Committees without voip.ms: one call center per SwitchBoard reference, found again on the next request
+    #[test]
+    fn test_web_only_call_centers_are_one_per_committee() {
+        let (db, path) = temp_db("webonly");
+        let (t1, _) = db.create_or_update_web_only_call_center("sb.example:12", 0, false).unwrap();
+        let (t1b, _) = db.create_or_update_web_only_call_center("sb.example:12", 0, false).unwrap();
+        assert_eq!(t1, t1b, "same committee, same call center and token");
+        let (t2, _) = db.create_or_update_web_only_call_center("sb.example:13", 0, false).unwrap();
+        assert_ne!(t1, t2, "another committee gets its own call center");
+        let (t1c, _) = db.create_or_update_web_only_call_center("sb.example:12", 0, true).unwrap();
+        assert_ne!(t1, t1c, "a renewal gives a new token");
+        let id = db.get_call_center_id_by_token(t1c).unwrap().unwrap().0;
+        let (user, _) = db.get_call_center_credentials(id).unwrap();
+        assert!(user.is_empty(), "no voip.ms account");
+        let _ = fs::remove_file(&path);
     }
 
     /// A text retried while nobody is on duty keeps its first arrival time, so the 24 h purge still applies.

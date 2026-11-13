@@ -98,6 +98,8 @@ impl WebServer {
             .route("/web/stream", get(web_chat::stream))
             .route("/web/history", get(web_chat::history))
             .route("/web/end", post(web_chat::end))
+            // the WP Chat plugin links its website with a pairing code (server to server: no CORS needed)
+            .route("/web/pair", post(crate::web_sites::pair))
             .layer(DefaultBodyLimit::max(8 * 1024)) // a message is at most 1000 characters: refuse anything bigger early
             .layer(web_chat::cors_layer())
             .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, REQUEST_TIMEOUT)); // the SSE body is not limited, only the time to answer

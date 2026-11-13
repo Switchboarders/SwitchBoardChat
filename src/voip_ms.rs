@@ -55,6 +55,10 @@ impl VoipMs {
             .map_err(|err| {
                 anyhow!("No credentials for id_call_center {id_call_center} in table call_center : {err}")
             })?;
+        if voip_ms_username.is_empty() {
+            // A call center without voip.ms (web chat only): never call voip.ms with empty credentials
+            return Err(anyhow!("call center {id_call_center} has no voip.ms account (web chat only): no SMS"));
+        }
 
         url.query_pairs_mut()
             .append_pair("api_username", voip_ms_username.as_str())

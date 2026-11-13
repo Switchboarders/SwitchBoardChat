@@ -20,6 +20,34 @@ pub async fn add_new_call_center(
     }
     let incoming_privilege_level = privilege_level;
     let db_manager = DbManager::new();
+
+    // Without voip.ms (a committee that only uses the web chat): no username, password or DID, and
+    // SwitchBoard's reference of the committee identifies the call center instead
+    let voip_username = payload.get("voip_ms_username").and_then(|v| v.as_str()).unwrap_or_default().trim().to_string();
+    if voip_username.is_empty() {
+        let Some(committee_ref) = payload.get("committee_ref").and_then(|v| v.as_str()).map(str::trim).filter(|r| !r.is_empty() && r.len() <= 200) else {
+            return super::return_query(
+                QueryStatus::Error,
+                "voip_ms_username, or committee_ref for a call center without voip.ms (web chat only), is required".to_string(),
+                "".to_string(),
+            );
+        };
+        let Some(privilege) = payload.get("privilege_level").and_then(|v| v.as_u64()) else {
+            return super::return_query(QueryStatus::Error, "privilege_level can't be parsed to u64".to_string(), "".to_string());
+        };
+        let renew = payload.get("renew_api_token").and_then(|v| v.as_bool()).unwrap_or(false);
+        if privilege > incoming_privilege_level {
+            return super::return_query(QueryStatus::Error, "Insufficent privilege".to_string(), "".to_string());
+        }
+        return match db_manager.create_or_update_web_only_call_center(committee_ref, privilege, renew) {
+            Ok(result) => super::return_query(QueryStatus::Success, result.1, result.0),
+            Err(err) => super::return_query(
+                QueryStatus::Error,
+                format!("Error while creating call center (db issue) {err}"),
+                "".to_string(),
+            ),
+        };
+    }
     if let Some(voip_ms_username_value) = payload.get("voip_ms_username")
         && let Some(voip_ms_api_password_value) = payload.get("voip_ms_api_password")
         && let Some(privilege_level_value) = payload.get("privilege_level")
