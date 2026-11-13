@@ -18,7 +18,7 @@ tracing-subscriber =   {version = "0.3.18", features= ["env-filter"] }
 dirs = "6.0.0"
 serde = { version = "1.0.217", features = ["rc","derive"] }
 serde_json = "1.0.138"
-rand = "0.8.5"
+rand = "0.10.3"
 tower-http = {version = "0.6.6", features = ["trace", "cors", "timeout"] }
 tower = { version = "0.5", features = ["limit"] }
 hyper-util = { version = "0.1", features = ["server-auto", "tokio"] }
