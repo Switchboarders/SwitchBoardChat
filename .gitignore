@@ -1,0 +1,18 @@
+/target
+/.vscode
+/logs
+/data
+temp
+sb-chat.tar
+/sb-chat
+.env
+/src/data/logs/*
+/src/data/db/*
+.zed/
+
+# Local, private settings
+scripts/deploy.env
+CLAUDE.local.md
+/target-*
+.claude/
+admin-api-token

@@ -1,0 +1,23 @@
+services:
+  sb-chat:
+    build:
+      context: . # Path to the direct>
+      dockerfile: Dockerfile      # O>
+    image: sbchat:latest
+    container_name: sb-chat
+    restart: always
+    env_file:
+      - .env
+    entrypoint: /app/entrypoint.sh
+    command: /app/switchboard-chat
+    ports:
+      - "3443:3443"
+    volumes:
+      - ./sb-chat:/app/data
+    networks:
+      - web
+networks:
+  web:
+    external: true
+    # Shared with the reverse proxy; scripts/install.sh --docker-network sets it in .env
+    name: ${SBCHAT_DOCKER_NETWORK:-web}

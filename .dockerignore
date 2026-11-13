@@ -1,0 +1,17 @@
+.vscode/
+.zed/
+.claude/
+.git/
+.env
+.env.*
+!.env-example
+logs/
+data/
+sb-chat/
+target/
+tests/
+tools/
+*.tar
+*.db
+temp
+admin-api-token

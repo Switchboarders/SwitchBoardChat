@@ -1,0 +1,47 @@
+# End-to-end test rig: a throwaway Synapse + the bridge image under test. Nothing here touches production.
+name: sbe2e
+services:
+  synapse:
+    image: matrixdotorg/synapse:v1.162.0
+    networks:
+      default:
+        aliases: [e2e.test]
+    volumes:
+      - ./.work/synapse:/data
+    ports:
+      - "127.0.0.1:18008:8008"
+    healthcheck:
+      test: ["CMD", "curl", "-fSs", "http://localhost:8008/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+  bridge:
+    image: ${BRIDGE_IMAGE:-sbchat:e2e}
+    entrypoint: /app/entrypoint.sh
+    command: /app/switchboard-chat
+    depends_on:
+      synapse:
+        condition: service_healthy
+    environment:
+      PHONE_HASH_SECRET: e2e-phone-hash-secret-0123456789
+      ROOM_PURGE_DELAY_SECS: "15"
+      PHONE_ENC_KEY: "0000000000000000000000000000000000000000000000000000000000000001"
+      HOMESERVER_URL: http://e2e.test:8008
+      MATRIX_USERNAME: "@bot:e2e.test"
+      MATRIX_PASSWORD: pw-e2e-1234
+      VIRTUAL_HOST: localhost
+      MUTE_VOIPMS_REQUEST: "true"
+      WEB_ALLOWED_ORIGINS: http://site.test
+      WEB_CALL_CENTER_ID: "2"
+      WEB_IDLE_TIMEOUT_MIN: "2880"
+      WEB_MAX_NEW_ROOMS_PER_MIN: "1000"
+      WEB_SESSIONS_PER_IP_PER_HOUR: "1000"
+      ATTENTION_JOIN_WAIT_SECS: "3"
+      ATTENTION_FOLLOWUP_MIN: "2"
+      VERIFY_START_DELAY_SECS: "1"
+      PRIVACY_OFFICER: "Responsable E2E, vie.privee@e2e.test"
+      APP_DATA_DIR: /app/data
+    volumes:
+      - ./.work/bridge:/app/data
+    ports:
+      - "127.0.0.1:18088:8088"

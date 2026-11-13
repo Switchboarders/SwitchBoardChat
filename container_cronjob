@@ -1,0 +1,1 @@
+33 4 * * * root /app/create_ssl_certificates.sh >> /var/log/cron.log 2>&1 && chown sb-chat:sb-chat /app/data/web_server_keys/*.pem
