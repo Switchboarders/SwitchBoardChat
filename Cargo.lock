@@ -3639,7 +3639,7 @@ dependencies = [
  "hyper-util",
  "ipnet",
  "matrix-sdk",
- "rand 0.8.8",
+ "rand 0.10.3",
  "regex",
  "rusqlite",
  "rustls",
