@@ -358,26 +358,28 @@ pub async fn send_message_to_room_using_id(
 
     let content = RoomMessageEventContent::text_plain(message);
     let txn_id = TransactionId::new();
-    // send our message to the room we found the "!party" command in
-    match timeout(
-        Duration::from_millis(10000),
-        room.send(content).with_transaction_id(txn_id),
-    )
-    .await
-    {
-        Ok(Ok(_)) => {}
-        Ok(Err(err)) => {
-            return Err(anyhow!("Err:{}", err));
-        }
-        Err(_) => {
-            return Err(anyhow!(
-                "Timed out when sending a message to roomid {}",
-                room_id
-            ));
+    // The first message of an encrypted room (or after new devices) shares the room key with every device of
+    // every member first: on a busy bridge, or with respondents who have many devices, that can take longer
+    // than 10 s. One more, longer try instead of giving up; same transaction id, so the homeserver keeps a
+    // single copy if the first try did get through.
+    for (attempt, limit) in [(1, 10_000u64), (2, 30_000u64)] {
+        match timeout(
+            Duration::from_millis(limit),
+            room.send(content.clone()).with_transaction_id(txn_id.clone()),
+        )
+        .await
+        {
+            Ok(Ok(_)) => return Ok(()),
+            Ok(Err(err)) => {
+                return Err(anyhow!("Err:{}", err));
+            }
+            Err(_) if attempt == 1 => {
+                warn!("Sending to room {room_id} took more than 10 s: trying once more (30 s)");
+            }
+            Err(_) => {}
         }
     }
-
-    Ok(())
+    Err(anyhow!("Timed out when sending a message to roomid {}", room_id))
 }
 
 // ================================
