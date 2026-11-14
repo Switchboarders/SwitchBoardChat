@@ -2,7 +2,7 @@
 # iowa build stage
 ########################################################################################################################
 # Built for the machine's own architecture (x86_64 servers, arm64 such as a Raspberry Pi 4/5 with a 64-bit OS)
-FROM rust:1.96.1-slim-bookworm AS switchboard-build
+FROM rust:1.99.1-slim-bookworm AS switchboard-build
 RUN apt update && \
     apt install -y musl-tools musl-dev libssl-dev pkg-config libsqlite3-dev adduser && \
     update-ca-certificates && \
